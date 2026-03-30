@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== MODELOS ====================
+
+model Usuario {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  nombre        String
+  apellido      String
+  rut           String    @unique
+  telefono      String?
+  rol           String    @default("CLIENTE")
+  activo        Boolean   @default(true)
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  casos      Caso[]
+  consultas  Consulta[]
+  documentos Documento[]
+  eventos    Evento[]
+  auditoria  Auditoria[]
+
+  @@map("usuarios")
+}
+
+model Caso {
+  id              String   @id @default(cuid())
+  usuarioId       String   @map("usuario_id")
+  titulo          String
+  descripcion     String
+  areaLegal       String   @map("area_legal")
+  estado          String   @default("ABIERTO")
+  tribunalId      String?  @map("tribunal_id")
+  region          String?
+  rol_causa       String?
+  resultado       String?
+  estrategia      String?
+  costoCLP        Int?     @map("costo_clp")
+  fechaInicio     DateTime @default(now()) @map("fecha_inicio")
+  fechaResolucion DateTime? @map("fecha_resolucion")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  usuario    Usuario     @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tribunal   Tribunal?   @relation(fields: [tribunalId], references: [id])
+  consultas  Consulta[]
+  documentos Documento[]
+  eventos    Evento[]
+
+  @@index([areaLegal])
+  @@index([estado])
+  @@index([usuarioId])
+  @@map("casos")
+}
+
+model Consulta {
+  id            String   @id @default(cuid())
+  usuarioId     String   @map("usuario_id")
+  casoId        String?  @map("caso_id")
+  pregunta      String
+  respuestaIA   String   @map("respuesta_ia")
+  areaLegal     String?  @map("area_legal")
+  fuentesCitadas String? @map("fuentes_citadas")
+  tokens        Int?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  caso    Caso?   @relation(fields: [casoId], references: [id])
+
+  @@index([usuarioId])
+  @@index([areaLegal])
+  @@map("consultas")
+}
+
+model Ley {
+  id              String   @id @default(cuid())
+  nombre          String
+  numero          String
+  tipo            String
+  textoCompleto   String   @map("texto_completo")
+  resumen         String?
+  areaLegal       String?  @map("area_legal")
+  fechaPublicacion DateTime @map("fecha_publicacion")
+  fechaVigencia   DateTime? @map("fecha_vigencia")
+  estado          String   @default("VIGENTE")
+  fuenteUrl       String?  @map("fuente_url")
+  hashContenido   String?  @map("hash_contenido")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  modificaciones ModificacionLegal[]
+
+  @@unique([numero, tipo])
+  @@index([numero])
+  @@index([estado])
+  @@index([areaLegal])
+  @@map("leyes")
+}
+
+model ModificacionLegal {
+  id               String   @id @default(cuid())
+  leyId            String   @map("ley_id")
+  descripcion      String
+  fechaModificacion DateTime @map("fecha_modificacion")
+  leyModificatoria String?  @map("ley_modificatoria")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  ley Ley @relation(fields: [leyId], references: [id], onDelete: Cascade)
+
+  @@index([leyId])
+  @@map("modificaciones_legales")
+}
+
+model Jurisprudencia {
+  id         String   @id @default(cuid())
+  tribunalId String   @map("tribunal_id")
+  rol        String
+  fecha      DateTime
+  materia    String
+  areaLegal  String   @map("area_legal")
+  resumen    String
+  texto      String
+  resultado  String?
+  fuenteUrl  String?  @map("fuente_url")
+  hashContenido String? @map("hash_contenido")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tribunal Tribunal @relation(fields: [tribunalId], references: [id])
+
+  @@index([materia])
+  @@index([areaLegal])
+  @@index([tribunalId])
+  @@map("jurisprudencia")
+}
+
+model Tribunal {
+  id          String  @id @default(cuid())
+  nombre      String
+  tipo        String
+  region      String
+  direccion   String?
+  competencia String?
+  activo      Boolean @default(true)
+
+  casos          Caso[]
+  jurisprudencia Jurisprudencia[]
+  eventos        Evento[]
+
+  @@map("tribunales")
+}
+
+model Documento {
+  id          String   @id @default(cuid())
+  usuarioId   String   @map("usuario_id")
+  casoId      String?  @map("caso_id")
+  tipo        String
+  titulo      String
+  contenido   String
+  plantillaId String?  @map("plantilla_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  usuario   Usuario           @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  caso      Caso?             @relation(fields: [casoId], references: [id])
+  plantilla PlantillaDocumento? @relation(fields: [plantillaId], references: [id])
+
+  @@index([usuarioId])
+  @@index([tipo])
+  @@map("documentos")
+}
+
+model PlantillaDocumento {
+  id               String  @id @default(cuid())
+  nombre           String
+  tipo             String
+  areaLegal        String  @map("area_legal")
+  contenidoTemplate String @map("contenido_template")
+  variables        String
+  activo           Boolean @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  documentos Documento[]
+
+  @@map("plantillas_documento")
+}
+
+model PatronLegal {
+  id        String   @id @default(cuid())
+  areaLegal String   @map("area_legal")
+  patron    String
+  frecuencia Int     @default(0)
+  tasaExito  Float?  @map("tasa_exito")
+  metadata  String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([areaLegal])
+  @@map("patrones_legales")
+}
+
+model Evento {
+  id          String   @id @default(cuid())
+  usuarioId   String   @map("usuario_id")
+  casoId      String?  @map("caso_id")
+  tribunalId  String?  @map("tribunal_id")
+  titulo      String
+  descripcion String?
+  fecha       DateTime
+  tipo        String
+  recordatorio Boolean @default(true)
+  completado  Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  usuario  Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  caso     Caso?     @relation(fields: [casoId], references: [id])
+  tribunal Tribunal? @relation(fields: [tribunalId], references: [id])
+
+  @@index([usuarioId])
+  @@index([fecha])
+  @@map("eventos")
+}
+
+model Auditoria {
+  id        String   @id @default(cuid())
+  usuarioId String?  @map("usuario_id")
+  accion    String
+  recurso   String
+  detalles  String?
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  usuario Usuario? @relation(fields: [usuarioId], references: [id])
+
+  @@index([usuarioId])
+  @@index([createdAt])
+  @@map("auditoria")
+}
