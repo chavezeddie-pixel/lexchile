@@ -208,7 +208,8 @@ export async function consultarIA(
     { role: 'user', content: userMessage },
   ]
 
-  const modelId = modelo === 'haiku' ? 'claude-haiku-4-20250414' : 'claude-sonnet-4-20250514'
+  // Usar Sonnet para todo por ahora (Haiku requiere verificar disponibilidad en el plan)
+  const modelId = 'claude-sonnet-4-20250514'
 
   const anthropic = getAnthropicClient()
   const response = await anthropic.messages.create({
