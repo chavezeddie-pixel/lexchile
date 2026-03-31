@@ -38,6 +38,7 @@ export default function ConsultaPage() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [showCopied, setShowCopied] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const searchParams = useSearchParams()
@@ -126,40 +127,63 @@ export default function ConsultaPage() {
     setMessages([]); setSessionId(null); setInput(''); router.push('/consulta')
   }
 
-  function downloadChat() {
-    const text = messages.map((m) => {
-      const label = m.role === 'user' ? 'TU' : 'LEXCHILE'
-      let content = `${label}:\n${m.content}\n`
-      if (m.fuentes && m.fuentes.length > 0) {
-        content += '\nFuentes legales:\n'
-        m.fuentes.forEach((f) => {
-          content += `- ${f.ley} ${f.articulo}: ${f.detalle}\n  ${f.url}\n`
-        })
-      }
-      return content
-    }).join('\n---\n\n')
+  function buildResumen(): string {
+    const fecha = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })
+    const firstQuestion = messages.find(m => m.role === 'user')?.content || ''
 
-    const header = '=== CONSULTA LEGAL - LEXCHILE ===\nFecha: ' + new Date().toLocaleDateString('es-CL') + '\n\nIMPORTANTE: Esta orientacion fue generada por inteligencia artificial. No constituye asesoria legal profesional. Verifique con un abogado.\n\n---\n\n'
-    const blob = new Blob([header + text], { type: 'text/plain;charset=utf-8' })
+    // Buscar la ultima respuesta larga del asistente (la orientacion o resumen)
+    const assistantMsgs = messages.filter(m => m.role === 'assistant')
+    const orientacion = assistantMsgs.length > 0
+      ? assistantMsgs[assistantMsgs.length - 1].content
+      : ''
+
+    // Recopilar todas las fuentes
+    const todasFuentes = messages
+      .flatMap(m => m.fuentes || [])
+      .filter((f, i, arr) => arr.findIndex(x => x.articulo === f.articulo && x.ley === f.ley) === i)
+
+    let resumen = `RESUMEN DE ORIENTACION LEGAL\nLexChile - ${fecha}\n`
+    resumen += `${'='.repeat(40)}\n\n`
+    resumen += `CONSULTA:\n${firstQuestion}\n\n`
+    resumen += `ORIENTACION:\n${orientacion}\n\n`
+
+    if (todasFuentes.length > 0) {
+      resumen += `FUENTES LEGALES:\n`
+      todasFuentes.forEach(f => {
+        resumen += `- ${f.ley} - ${f.articulo}\n  ${f.detalle}\n  ${f.url}\n\n`
+      })
+    }
+
+    resumen += `${'='.repeat(40)}\n`
+    resumen += `IMPORTANTE: Este documento fue generado por inteligencia artificial y puede contener errores. La informacion es orientativa y no constituye asesoria legal profesional. Para una evaluacion especifica de su caso, consulte con un abogado.\n\n`
+    resumen += `Generado en LexChile - Orientacion Legal con IA para Chile`
+
+    return resumen
+  }
+
+  function downloadResumen() {
+    const resumen = buildResumen()
+    const blob = new Blob([resumen], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `consulta-lexchile-${new Date().toISOString().split('T')[0]}.txt`
+    a.download = `resumen-legal-${new Date().toISOString().split('T')[0]}.txt`
     a.click()
     URL.revokeObjectURL(url)
   }
 
-  function shareChat() {
-    const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
-    const text = lastAssistant
-      ? `Consulta en LexChile:\n\n${lastAssistant.content.substring(0, 300)}...\n\nConsulta gratis en: ${window.location.origin}/consulta`
-      : `Consulta legal gratis con IA en: ${window.location.origin}/consulta`
+  function shareResumen() {
+    const resumen = buildResumen()
 
     if (navigator.share) {
-      navigator.share({ title: 'LexChile - Orientacion Legal', text }).catch(() => {})
+      navigator.share({
+        title: 'Resumen Legal - LexChile',
+        text: resumen
+      }).catch(() => {})
     } else {
-      navigator.clipboard.writeText(text).then(() => {
-        alert('Texto copiado al portapapeles')
+      navigator.clipboard.writeText(resumen).then(() => {
+        setShowCopied(true)
+        setTimeout(() => setShowCopied(false), 2000)
       })
     }
   }
@@ -177,16 +201,23 @@ export default function ConsultaPage() {
             <span className="font-semibold text-gray-700">LexChile</span>
             <span className="text-xs text-gray-400">Orientacion legal IA</span>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={downloadChat} className="flex items-center gap-1 text-xs text-gray-400 hover:text-emerald-600 transition-colors" title="Descargar consulta">
+          <div className="flex items-center gap-1.5">
+            <button onClick={downloadResumen} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 transition-all" title="Descargar resumen">
               <Download className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Descargar</span>
             </button>
-            <button onClick={shareChat} className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 transition-colors" title="Compartir">
+            <button onClick={shareResumen} className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 hover:border-blue-300 transition-all" title="Compartir resumen">
               <Share2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Compartir</span>
+              {showCopied && (
+                <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded-lg whitespace-nowrap">
+                  Copiado!
+                </span>
+              )}
             </button>
-            <button onClick={startNewChat} className="flex items-center gap-1 text-xs text-gray-400 hover:text-indigo-600 transition-colors">
+            <button onClick={startNewChat} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100 hover:border-gray-300 transition-all">
               <Plus className="h-3.5 w-3.5" />
-              Nueva
+              <span className="hidden sm:inline">Nueva</span>
             </button>
           </div>
         </div>
