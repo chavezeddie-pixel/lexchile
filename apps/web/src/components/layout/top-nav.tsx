@@ -30,7 +30,7 @@ export function TopNav() {
         <span>LexChile</span>
       </Link>
 
-      <nav className="flex items-center gap-1">
+      <nav aria-label="Navegacion principal" className="flex items-center gap-1">
         {NAV_ITEMS.map((item) => {
           const isActive = pathname.startsWith(item.href)
           const Icon = item.icon
@@ -38,6 +38,7 @@ export function TopNav() {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
                 'relative flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors rounded-lg',
                 isActive

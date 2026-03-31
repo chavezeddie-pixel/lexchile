@@ -62,14 +62,27 @@ export async function POST(request: Request) {
       historial
     )
 
-    // Separar la respuesta del bloque de fuentes
+    // Separar respuesta, fuentes y sugerencias
     let respuestaLimpia = respuesta
     const fuentes: Array<{ ley: string; articulo: string; detalle: string; url: string }> = []
+    let sugerencias: string[] = []
 
-    const fuentesIndex = respuesta.indexOf('---FUENTES---')
+    // Extraer sugerencias
+    const sugIndex = respuestaLimpia.indexOf('---SUGERENCIAS---')
+    if (sugIndex !== -1) {
+      const sugTexto = respuestaLimpia.substring(sugIndex + '---SUGERENCIAS---'.length).trim()
+      respuestaLimpia = respuestaLimpia.substring(0, sugIndex).trim()
+      sugerencias = sugTexto.split('\n')
+        .map((l) => l.replace(/^\[|\]$/g, '').trim())
+        .filter((l) => l.length > 0 && !l.startsWith('Ley:'))
+        .slice(0, 4)
+    }
+
+    // Extraer fuentes
+    const fuentesIndex = respuestaLimpia.indexOf('---FUENTES---')
     if (fuentesIndex !== -1) {
-      respuestaLimpia = respuesta.substring(0, fuentesIndex).trim()
-      const fuentesTexto = respuesta.substring(fuentesIndex + '---FUENTES---'.length).trim()
+      const fuentesTexto = respuestaLimpia.substring(fuentesIndex + '---FUENTES---'.length).trim()
+      respuestaLimpia = respuestaLimpia.substring(0, fuentesIndex).trim()
       const lineas = fuentesTexto.split('\n').filter((l) => l.trim().startsWith('Ley:'))
       for (const linea of lineas) {
         const leyMatch = linea.match(/Ley:\s*([^|]+)/)
@@ -87,7 +100,20 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ respuesta: respuestaLimpia, tokens, fuentes })
+    // Si las sugerencias estaban despues de las fuentes, re-extraer
+    if (sugerencias.length === 0) {
+      const sugInFuentes = respuestaLimpia.indexOf('---SUGERENCIAS---')
+      if (sugInFuentes !== -1) {
+        const sugTexto = respuestaLimpia.substring(sugInFuentes + '---SUGERENCIAS---'.length).trim()
+        respuestaLimpia = respuestaLimpia.substring(0, sugInFuentes).trim()
+        sugerencias = sugTexto.split('\n')
+          .map((l) => l.replace(/^\[|\]$/g, '').trim())
+          .filter((l) => l.length > 0)
+          .slice(0, 4)
+      }
+    }
+
+    return NextResponse.json({ respuesta: respuestaLimpia, tokens, fuentes, sugerencias })
   } catch (error) {
     console.error('Error en consulta:', error)
     return NextResponse.json({ error: 'Error al procesar la consulta. Intenta nuevamente.' }, { status: 500 })
