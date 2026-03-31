@@ -39,6 +39,8 @@ export default function ConsultaPage() {
   const [loading, setLoading] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [showCopied, setShowCopied] = useState(false)
+  const [remaining, setRemaining] = useState<number | null>(null)
+  const [limitReached, setLimitReached] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const searchParams = useSearchParams()
@@ -102,6 +104,8 @@ export default function ConsultaPage() {
         body: JSON.stringify({ pregunta, historial: newMessages.slice(0, -1).map((m) => ({ role: m.role, content: m.content })) }),
       })
       const data = await res.json()
+      if (data.remaining !== undefined) setRemaining(data.remaining)
+      if (data.limitReached) { setLimitReached(true) }
       if (!res.ok) {
         setMessages((prev) => [...prev, { role: 'assistant', content: data.error || 'Error al procesar.' }])
       } else {
@@ -388,30 +392,46 @@ export default function ConsultaPage() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input - fijo abajo, grande y calido */}
+      {/* Input - fijo abajo */}
       <div className="border-t border-gray-100 pt-3 pb-2 bg-gradient-to-t from-white to-transparent">
-        <form onSubmit={handleSubmit} className="flex items-end gap-2">
-          <div className="flex-1 relative">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Escribe tu consulta aqui..."
-              className="w-full resize-none rounded-2xl border-2 border-gray-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 px-5 py-3.5 text-[15px] placeholder:text-gray-300 transition-all outline-none min-h-[52px] max-h-[120px]"
-              rows={1}
-              disabled={loading}
-            />
+        {limitReached ? (
+          <div className="text-center py-4 px-6 bg-amber-50 border border-amber-200 rounded-2xl">
+            <p className="text-amber-800 font-medium text-sm">Has usado tus 5 consultas gratuitas de hoy</p>
+            <p className="text-amber-600 text-xs mt-1">Vuelve manana para seguir consultando. Puedes descargar o compartir tu consulta actual.</p>
           </div>
-          <button
-            type="submit"
-            disabled={loading || !input.trim()}
-            className="w-12 h-12 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 disabled:from-gray-300 disabled:to-gray-300 text-white flex items-center justify-center shadow-lg hover:shadow-xl transition-all disabled:shadow-none shrink-0"
-          >
-            <Send className="h-5 w-5" />
-          </button>
-        </form>
-        <p className="text-center text-[10px] text-gray-300 mt-2">LexChile usa IA y puede cometer errores. Verifica con un abogado.</p>
+        ) : (
+          <>
+            <form onSubmit={handleSubmit} className="flex items-end gap-2">
+              <div className="flex-1 relative">
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Escribe tu consulta aqui..."
+                  className="w-full resize-none rounded-2xl border-2 border-gray-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 px-5 py-3.5 text-[15px] placeholder:text-gray-300 transition-all outline-none min-h-[52px] max-h-[120px]"
+                  rows={1}
+                  disabled={loading}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="w-12 h-12 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 disabled:from-gray-300 disabled:to-gray-300 text-white flex items-center justify-center shadow-lg hover:shadow-xl transition-all disabled:shadow-none shrink-0"
+              >
+                <Send className="h-5 w-5" />
+              </button>
+            </form>
+            <div className="flex items-center justify-between mt-2 px-1">
+              <p className="text-[10px] text-gray-300">LexChile usa IA y puede cometer errores.</p>
+              {remaining !== null && (
+                <p className={`text-[10px] font-medium ${remaining <= 1 ? 'text-amber-500' : 'text-gray-300'}`}>
+                  {remaining} consulta{remaining !== 1 ? 's' : ''} restante{remaining !== 1 ? 's' : ''} hoy
+                </p>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

@@ -184,7 +184,8 @@ export async function consultarIA(
   pregunta: string,
   contextoLeyes?: string,
   contextoJurisprudencia?: string,
-  historial?: Array<{ role: 'user' | 'assistant'; content: string }>
+  historial?: Array<{ role: 'user' | 'assistant'; content: string }>,
+  modelo: 'sonnet' | 'haiku' = 'sonnet'
 ) {
   let userMessage = pregunta
 
@@ -207,10 +208,12 @@ export async function consultarIA(
     { role: 'user', content: userMessage },
   ]
 
+  const modelId = modelo === 'haiku' ? 'claude-haiku-4-20250414' : 'claude-sonnet-4-20250514'
+
   const anthropic = getAnthropicClient()
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
+    model: modelId,
+    max_tokens: modelo === 'haiku' ? 2048 : 4096,
     system: SYSTEM_PROMPT,
     messages,
   })

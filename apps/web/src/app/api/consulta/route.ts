@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { headers } from 'next/headers'
 import { consultarIA, buscarContextoLegal } from '@/lib/ai'
 import { detectarConsultaExtranjera } from '@/lib/chile'
 import { readFileSync } from 'fs'
@@ -18,11 +19,56 @@ function hasApiKey(): boolean {
   return false
 }
 
+// Rate limiting por IP - 5 consultas diarias gratis
+const DAILY_LIMIT = 5
+const rateLimitMap = new Map<string, { count: number; date: string }>()
+
+function checkRateLimit(ip: string): { allowed: boolean; remaining: number } {
+  const today = new Date().toISOString().split('T')[0]
+  const entry = rateLimitMap.get(ip)
+
+  if (!entry || entry.date !== today) {
+    rateLimitMap.set(ip, { count: 1, date: today })
+    return { allowed: true, remaining: DAILY_LIMIT - 1 }
+  }
+
+  if (entry.count >= DAILY_LIMIT) {
+    return { allowed: false, remaining: 0 }
+  }
+
+  entry.count++
+  return { allowed: true, remaining: DAILY_LIMIT - entry.count }
+}
+
+// Determinar si usar Haiku (preguntas) o Sonnet (orientacion)
+function shouldUseSonnet(historial: Array<{ role: string; content: string }>): boolean {
+  // Sonnet si: hay 4+ mensajes (ya recopilo info) o el usuario pide resumen
+  if (historial.length >= 4) return true
+  const lastUser = [...historial].reverse().find(m => m.role === 'user')
+  if (lastUser && /resumen|opciones|que puedo hacer|que me corresponde|cuanto/i.test(lastUser.content)) return true
+  return false
+}
+
 const RESPUESTA_EXTRANJERA =
   'Este sistema esta disenado exclusivamente para el sistema juridico chileno. No puedo proporcionar informacion sobre legislacion de otros paises.'
 
 export async function POST(request: Request) {
   try {
+    // Rate limit por IP
+    const headersList = headers()
+    const ip = headersList.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || headersList.get('x-real-ip')
+      || 'unknown'
+
+    const { allowed, remaining } = checkRateLimit(ip)
+
+    if (!allowed) {
+      return NextResponse.json({
+        error: 'Has alcanzado el limite de 5 consultas diarias gratuitas. Vuelve manana para seguir consultando.',
+        limitReached: true,
+      }, { status: 429 })
+    }
+
     const body = await request.json()
     const pregunta = body.pregunta?.trim()
 
@@ -30,36 +76,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Escribe algo para consultar.' }, { status: 400 })
     }
 
-    // Detectar consultas sobre leyes extranjeras
     if (detectarConsultaExtranjera(pregunta)) {
-      return NextResponse.json({
-        respuesta: RESPUESTA_EXTRANJERA,
-        fuentesCitadas: [],
-      })
+      return NextResponse.json({ respuesta: RESPUESTA_EXTRANJERA, fuentesCitadas: [] })
     }
 
-    // Buscar contexto legal relevante (RAG)
     const { contextoLeyes, contextoJurisprudencia } = await buscarContextoLegal(pregunta)
 
-    // Verificar que hay API key configurada
     if (!hasApiKey()) {
-      // Sin API key: devolver respuesta basada en el contexto de la base de datos
       const respuestaLocal = contextoLeyes
-        ? `Basandome en la legislacion chilena disponible:\n\n${contextoLeyes.substring(0, 3000)}\n\n---\nNota: Esta respuesta muestra la informacion legal disponible en nuestra base de datos. Para una respuesta mas detallada con IA, se requiere configurar la API de Claude.`
-        : 'Lo siento, no encontre informacion relevante en nuestra base de datos para esa consulta. Intenta reformular tu pregunta usando terminos legales chilenos especificos.'
-
+        ? `Basandome en la legislacion chilena disponible:\n\n${contextoLeyes.substring(0, 3000)}\n\n---\nNota: Para respuestas con IA, se requiere configurar la API de Claude.`
+        : 'No encontre informacion relevante. Intenta reformular tu pregunta.'
       return NextResponse.json({ respuesta: respuestaLocal })
     }
 
-    // Historial de conversacion para mantener el hilo
     const historial = body.historial || []
 
-    // Consultar IA con contexto y historial
+    // Modelo dual: Haiku para preguntas, Sonnet para orientacion
+    const useSonnet = shouldUseSonnet(historial)
+
     const { respuesta, tokens } = await consultarIA(
       pregunta,
       contextoLeyes,
       contextoJurisprudencia,
-      historial
+      historial,
+      useSonnet ? 'sonnet' : 'haiku'
     )
 
     // Separar respuesta, fuentes y sugerencias
@@ -113,7 +153,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ respuesta: respuestaLimpia, tokens, fuentes, sugerencias })
+    return NextResponse.json({ respuesta: respuestaLimpia, tokens, fuentes, sugerencias, remaining, modelo: useSonnet ? 'sonnet' : 'haiku' })
   } catch (error) {
     console.error('Error en consulta:', error)
     return NextResponse.json({ error: 'Error al procesar la consulta. Intenta nuevamente.' }, { status: 500 })
